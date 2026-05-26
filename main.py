@@ -5,6 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from typing import Tuple, List
 from models.abstraction import IBaseNeuralNetworkModel
 from models.gradient_model_adamw import GradientModelAdamW
+from models.lshade_model import LShadeModel
 
 
 def prepare_wine_data(test_size: float = 0.2, random_state: int = 42, binary: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -53,23 +54,37 @@ def run_experiment(model: IBaseNeuralNetworkModel, x_train: torch.Tensor, y_trai
 if __name__ == "__main__":
     # Set to True for binary classification (quality >= 6), False for multiclass
     use_binary_classification = False
+    # Choose optimizer: "adamw" or "lshade"
+    optimizer_name = "lshade"
+
     x_train, x_test, y_train, y_test = prepare_wine_data(binary=use_binary_classification)
     
     input_size = x_train.shape[1]
     output_size = len(torch.unique(y_train))
     hidden_sizes = [64, 32]
-    
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    model_adamw = GradientModelAdamW(
-        input_size=input_size, 
-        hidden_sizes=hidden_sizes, 
-        output_size=output_size, 
-        lr=0.001
-    )
+
+    if optimizer_name.lower() == "adamw":
+        model = GradientModelAdamW(
+            input_size=input_size,
+            hidden_sizes=hidden_sizes,
+            output_size=output_size,
+            lr=0.001,
+        )
+    elif optimizer_name.lower() == "lshade":
+        model = LShadeModel(
+            input_size=input_size,
+            hidden_sizes=hidden_sizes,
+            output_size=output_size,
+            population_size=20,
+            population_size_min=4,
+            memory_size=10,
+            seed=42,
+        )
+    else:
+        raise ValueError(f"Unknown optimizer_name={optimizer_name!r}")
     
     history = run_experiment(
-        model=model_adamw, 
+        model=model,
         x_train=x_train, 
         y_train=y_train, 
         iterations=100
