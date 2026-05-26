@@ -7,7 +7,6 @@ class GradientModelAdamW(IBaseNeuralNetworkModel):
     def __init__(self, input_size: int, hidden_sizes: List[int], output_size: int, lr: float = 0.001):
         super().__init__(input_size, hidden_sizes, output_size)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr = lr)
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
     def train(self, x_train: torch.Tensor, y_train: torch.Tensor, iterations: int = 100) -> list: 

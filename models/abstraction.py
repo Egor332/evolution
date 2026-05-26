@@ -15,6 +15,7 @@ class IBaseNeuralNetworkModel(ABC):
         layers.append(nn.Linear(current_input_size, output_size))
         self.model = nn.Sequential(*layers)
 
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.criterion = nn.CrossEntropyLoss()
         
 
