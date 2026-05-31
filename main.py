@@ -1,11 +1,11 @@
-import pandas as pd
 import torch
+from experiment_engine import ExperimentEngine, ExperimentConfig
+from models.gradient_model_adamw import GradientModelAdamW
+from models.cma_es_model import CMAESModel
+import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from typing import Tuple, List
-from models.abstraction import IBaseNeuralNetworkModel
-from models.gradient_model_adamw import GradientModelAdamW
-
+from typing import Tuple
 
 def prepare_wine_data(test_size: float = 0.2, random_state: int = 42, binary: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     print("Download and prepare Wine Quality Dataset...")
@@ -39,38 +39,46 @@ def prepare_wine_data(test_size: float = 0.2, random_state: int = 42, binary: bo
     print(f"Data ready. Train size: {x_train_tensor.shape[0]}, test size: {x_test_tensor.shape[0]}")
     return x_train_tensor, x_test_tensor, y_train_tensor, y_test_tensor
 
-
-def run_experiment(model: IBaseNeuralNetworkModel, x_train: torch.Tensor, y_train: torch.Tensor, iterations: int) -> List[float]:
-
-    print(f"Start model learning for {iterations} iterations...")
-    
-    loss_history = model.train(x_train, y_train, iterations=iterations)
-    
-    print(f"Training finished. Final loss: {loss_history[-1]:.4f}")
-    return loss_history
-
-
 if __name__ == "__main__":
-    # Set to True for binary classification (quality >= 6), False for multiclass
+    # Setup Config
     use_binary_classification = False
-    x_train, x_test, y_train, y_test = prepare_wine_data(binary=use_binary_classification)
+    config = ExperimentConfig(
+        experiment_name="wine_quality_comparison",
+        dataset_type='binary' if use_binary_classification else 'multiclass',
+        iterations=100,
+        seed=42
+    )
+
+    # Initialize Engine
+    engine = ExperimentEngine(config)
+
+    # Note: Engine seed is set during init, so data split here is reproducible.
+    x_train, x_test, y_train, y_test = prepare_wine_data(
+        binary=use_binary_classification,
+        random_state=config.seed
+    )
     
     input_size = x_train.shape[1]
     output_size = len(torch.unique(y_train))
     hidden_sizes = [64, 32]
     
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    model_adamw = GradientModelAdamW(
-        input_size=input_size, 
-        hidden_sizes=hidden_sizes, 
-        output_size=output_size, 
-        lr=0.001
-    )
-    
-    history = run_experiment(
-        model=model_adamw, 
-        x_train=x_train, 
-        y_train=y_train, 
-        iterations=100
-    )
+    # Model factories allow the engine to instantiate models after securing the seed
+    model_factories = {
+        "AdamW": lambda: GradientModelAdamW(
+            input_size=input_size, 
+            hidden_sizes=hidden_sizes, 
+            output_size=output_size, 
+            lr=0.001
+        ),
+        "CMA-ES": lambda: CMAESModel(
+            input_size=input_size,
+            hidden_sizes=hidden_sizes,
+            output_size=output_size,
+            sigma0=0.1,
+            population_size=50
+        )
+    }
+
+    # Run experiment
+    data = (x_train, x_test, y_train, y_test)
+    engine.run_experiment(model_factories=model_factories, data=data)

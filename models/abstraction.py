@@ -16,8 +16,9 @@ class IBaseNeuralNetworkModel(ABC):
         self.model = nn.Sequential(*layers)
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.model.to(self.device)
         self.criterion = nn.CrossEntropyLoss()
-        
+
 
 
     @abstractmethod
