@@ -22,8 +22,10 @@ class IBaseNeuralNetworkModel(ABC):
 
 
     @abstractmethod
-    def train(self, x_train: torch.Tensor, y_train: torch.Tensor, iterations: int) -> list:
-        # iterations is epochs or generations
+    def train(self, x_train: torch.Tensor, y_train: torch.Tensor,
+              x_val: torch.Tensor = None, y_val: torch.Tensor = None,
+              max_nfe: int = 15000, patience: int = 10) -> list:
+        # Returns loss history
         pass
 
     def predict(self, X: torch.Tensor) -> torch.Tensor:

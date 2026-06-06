@@ -31,9 +31,14 @@ class CMAESModel(IBaseNeuralNetworkModel):
         # Damping factor
         self.d_sigma = 1.0 + 2 * max(0, math.sqrt((self.mu_eff - 1) / (self.N + 1)) - 1) + self.c_sigma
 
-    def train(self, x_train: torch.Tensor, y_train: torch.Tensor, iterations: int) -> list:
+    def train(self, x_train: torch.Tensor, y_train: torch.Tensor, 
+              x_val: torch.Tensor = None, y_val: torch.Tensor = None, 
+              max_nfe: int = 15000, patience: int = 10) -> list:
         x_train = x_train.to(self.device)
         y_train = y_train.to(self.device)
+        if x_val is not None and y_val is not None:
+            x_val = x_val.to(self.device)
+            y_val = y_val.to(self.device)
 
         initial_params = torch.nn.utils.parameters_to_vector(self.model.parameters())
 
@@ -56,18 +61,26 @@ class CMAESModel(IBaseNeuralNetworkModel):
         print(f"Starting CMA-ES Training. Parameters (N): {self.N} | Population: {self.population_size}")
 
         loss_history = []
+        nfe = 0
+        best_val_loss = float('inf')
+        best_weights_m = None
+        nfe_no_improve = 0
 
-        for generation in range(iterations):
+        generation = 0
+        while nfe < max_nfe:
             population = self.cmaes.ask()
 
             fitnesses = []
 
             for i in range(self.population_size):
+                if nfe >= max_nfe:
+                    break
                 torch.nn.utils.vector_to_parameters(population[i], self.model.parameters())
 
                 outputs = self.model(x_train)
                 loss = self.criterion(outputs, y_train)
                 fitnesses.append(loss.item())
+                nfe += 1
 
             self.cmaes.tell(fitnesses)
 
@@ -77,8 +90,31 @@ class CMAESModel(IBaseNeuralNetworkModel):
             if (generation + 1) % 10 == 0 or generation == 0:
                 print(f"Generation {generation+1:4d} | Best Loss: {best_loss:.6f} | Sigma: {self.cmaes.sigma:.6f}")
 
+            if x_val is not None and y_val is not None:
+                # evaluate validation on current mean
+                torch.nn.utils.vector_to_parameters(self.cmaes.m, self.model.parameters())
+                self.model.eval()
+                with torch.no_grad():
+                    val_outputs = self.model(x_val)
+                    val_loss = self.criterion(val_outputs, y_val).item()
+                
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_weights_m = self.cmaes.m.clone()
+                    nfe_no_improve = 0
+                else:
+                    nfe_no_improve += self.population_size
+                
+                if nfe_no_improve >= patience:
+                    print(f"Early stopping at generation {generation} (NFE: {nfe}, Best Val Loss: {best_val_loss:.4f})")
+                    if best_weights_m is not None:
+                        self.cmaes.m = best_weights_m
+                    break
+                    
+            generation += 1
+
         torch.nn.utils.vector_to_parameters(self.cmaes.m, self.model.parameters())
-        print("Training Complete. Model parameters updated to the final mean.")
+        print(f"Training Complete. NFE: {nfe}. Model parameters updated to the final mean.")
 
         return loss_history
 

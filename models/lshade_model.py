@@ -113,13 +113,13 @@ class LShadeModel(IBaseNeuralNetworkModel):
         # Fallback: clamp
         return float(np.clip(mu, 1e-12, 1.0))
 
-    def _linear_population_size(self, gen: int, total_gens: int) -> int:
-        # gen in [0, total_gens-1]
+    def _linear_population_size(self, nfe: int, max_nfe: int) -> int:
+        # nfe in [0, max_nfe]
         np0 = self.population_size
         np_min = self.population_size_min
-        if total_gens <= 1:
+        if max_nfe <= 1:
             return np_min
-        t = gen / (total_gens - 1)
+        t = min(1.0, nfe / max_nfe)
         # Round to keep integer population sizes.
         return int(np.round(np0 - (np0 - np_min) * t))
 
@@ -127,7 +127,10 @@ class LShadeModel(IBaseNeuralNetworkModel):
         self,
         x_train: torch.Tensor,
         y_train: torch.Tensor,
-        iterations: int = 100,
+        x_val: torch.Tensor = None,
+        y_val: torch.Tensor = None,
+        max_nfe: int = 15000,
+        patience: int = 10,
     ) -> list:
         self._ensure_vector_metadata()
         self.model.to(self.device)
@@ -138,6 +141,9 @@ class LShadeModel(IBaseNeuralNetworkModel):
 
         x_train = x_train.to(self.device)
         y_train = y_train.to(self.device)
+        if x_val is not None and y_val is not None:
+            x_val = x_val.to(self.device)
+            y_val = y_val.to(self.device)
 
         # Bounds derived from initial parameters.
         init_vec = self._vectorize_parameters()
@@ -159,8 +165,12 @@ class LShadeModel(IBaseNeuralNetworkModel):
         pop = lb + np.random.rand(NP, D) * (ub - lb)
         fit = np.empty((NP,), dtype=np.float64)
 
+        nfe = 0
         for i in range(NP):
+            if nfe >= max_nfe:
+                break
             fit[i] = self._compute_fitness(pop[i], x_train, y_train)
+            nfe += 1
 
         best_idx = int(np.argmin(fit))
         best_fitness = float(fit[best_idx])
@@ -175,14 +185,18 @@ class LShadeModel(IBaseNeuralNetworkModel):
         archive: List[np.ndarray] = []
         history: List[float] = []
 
-        total_gens = int(iterations)
-        if total_gens <= 0:
+        if max_nfe <= 0:
             self._set_parameters_from_vector(best_vector)
             return [best_fitness]
+            
+        best_val_loss = float('inf')
+        best_weights_vec = None
+        nfe_no_improve = 0
 
-        # Precompute ordering each generation (cost: O(N log N), okay for small NP).
-        for gen in range(total_gens):
-            NP_target = self._linear_population_size(gen, total_gens)
+        # Run until NFE limit is reached
+        generation = 0
+        while nfe < max_nfe:
+            NP_target = self._linear_population_size(nfe, max_nfe)
 
             # Resize population if needed at the start of generation.
             if NP_target < pop.shape[0]:
@@ -262,7 +276,11 @@ class LShadeModel(IBaseNeuralNetworkModel):
                 u = np.clip(u, lb, ub)
 
                 # Selection.
+                if nfe >= max_nfe:
+                    break
                 f_u = self._compute_fitness(u, x_train, y_train)
+                nfe += 1
+                
                 if f_u <= fit[i]:
                     # Archive stores replaced individuals.
                     archive.append(x_i.copy())
@@ -303,8 +321,32 @@ class LShadeModel(IBaseNeuralNetworkModel):
             k_mem = (k_mem + 1) % H
 
             history.append(best_fitness)
+            
+            if x_val is not None and y_val is not None:
+                # evaluate validation on best vector
+                self._set_parameters_from_vector(best_vector)
+                self.model.eval()
+                with torch.no_grad():
+                    val_outputs = self.model(x_val)
+                    val_loss = self.criterion(val_outputs, y_val).item()
+                
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_weights_vec = best_vector.copy()
+                    nfe_no_improve = 0
+                else:
+                    nfe_no_improve += pop.shape[0]
+                
+                if nfe_no_improve >= patience:
+                    print(f"Early stopping at generation {generation} (NFE: {nfe}, Best Val Loss: {best_val_loss:.4f})")
+                    if best_weights_vec is not None:
+                        best_vector = best_weights_vec
+                    break
+                    
+            generation += 1
 
         # Set best solution found.
         self._set_parameters_from_vector(best_vector)
+        print(f"Training Complete. NFE: {nfe}. Model parameters updated to the best vector.")
         return history
 

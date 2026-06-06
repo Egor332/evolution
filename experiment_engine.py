@@ -15,8 +15,10 @@ from models.abstraction import IBaseNeuralNetworkModel
 class ExperimentConfig:
     experiment_name: str
     dataset_type: str  # 'binary' or 'multiclass'
-    test_size: float = 0.2
-    iterations: int = 100
+    val_size: float = 0.15
+    test_size: float = 0.15
+    max_nfe: int = 15000
+    patience: int = 10
     seed: int = 42
 
 
@@ -73,12 +75,12 @@ class ExperimentEngine:
 
     def run_experiment(self, 
                        model_factories: Dict[str, Callable[[], IBaseNeuralNetworkModel]], 
-                       data: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
+                       data: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
         """
         Runs the experiment for each provided model factory.
         Model factories allow creating models *after* setting the seed.
         """
-        x_train, x_test, y_train, y_test = data
+        x_train, x_val, x_test, y_train, y_val, y_test = data
         
         print(f"Starting Experiment: {self.config.experiment_name}")
         print(f"Seed: {self.config.seed} | Type: {self.config.dataset_type}")
@@ -93,7 +95,7 @@ class ExperimentEngine:
             model = model_factory()
             
             # Train the model
-            loss_history = model.train(x_train, y_train, iterations=self.config.iterations)
+            loss_history = model.train(x_train, y_train, x_val, y_val, max_nfe=self.config.max_nfe, patience=self.config.patience)
             
             # Evaluate the model
             metrics = self.evaluate(model, x_test, y_test)
@@ -113,8 +115,8 @@ class ExperimentEngine:
             for m_name, m_val in metrics.items():
                 print(f"[{model_name}] {m_name.capitalize()}: {m_val:.4f}")
                 
-        self._save_statistics()
-        self._plot_results()
+        #self._save_statistics()
+        #self._plot_results()
         
     def _save_statistics(self):
         """Saves evaluation metrics to a JSON file."""
