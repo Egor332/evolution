@@ -1,4 +1,5 @@
 import os
+import argparse
 import torch
 import pandas as pd
 import numpy as np
@@ -66,6 +67,23 @@ def find_hidden_sizes(target_params, input_dim=11, output_dim=2):
     h = int(round(h))
     return [h, h]
 
+def find_hidden_sizes_by_layers(target_params, num_layers, input_dim=11, output_dim=2):
+    if num_layers == 1:
+        h = (target_params - output_dim) / (input_dim + output_dim + 1)
+        return [int(round(h))]
+    elif num_layers == 2:
+        b = input_dim + output_dim + 2
+        c = output_dim - target_params
+        h = (-b + np.sqrt(b**2 - 4*c)) / 2
+        return [int(round(h))] * 2
+    elif num_layers == 3:
+        b = input_dim + output_dim + 3
+        c = output_dim - target_params
+        h = (-b + np.sqrt(b**2 - 8*c)) / 4
+        return [int(round(h))] * 3
+    else:
+        raise ValueError("Only 1, 2, or 3 layers supported")
+
 def get_param_count(input_dim, hidden_sizes, output_dim):
     cnt = 0
     curr = input_dim
@@ -93,74 +111,28 @@ def create_adamw(input_dim, hidden_sizes, output_dim):
 
 # --- Experiments ---
 def main():
+    parser = argparse.ArgumentParser(description="Run Wine Quality experiments.")
+    parser.add_argument("--exp", type=int, choices=[1, 2, 3, 4, 5], default=None,
+                        help="Specific experiment to run (1-5). Runs all if not specified.")
+    args = parser.parse_args()
+
     data_binary, data_multi, unique_classes = get_dataset(seed=42)
     num_classes = len(unique_classes)
     input_dim = 11
 
     # --- Experiment 1: Reality Check ---
-    print("\n" + "="*50)
-    print("EXPERIMENT 1: Reality Check")
-    print("="*50)
-    hs_500 = find_hidden_sizes(500, input_dim, 2)
-    print(f"Chosen hidden sizes for ~500 params: {hs_500} (Actual: {get_param_count(input_dim, hs_500, 2)})")
-    
-    # 3 seeds
-    e1_results = {"cmaes": {"prec": [], "rec": []}, "lshade": {"prec": [], "rec": []}, "adamw": {"prec": [], "rec": []}}
-    for seed in [42, 43, 44]:
-        config = ExperimentConfig(
-            experiment_name=f"Exp1_RealityCheck_seed_{seed}",
-            dataset_type="binary",
-            max_nfe=15000,
-            patience=800,
-            seed=seed
-        )
-        engine = ExperimentEngine(config)
-        factories = {
-            "cmaes": lambda: create_cma_es(input_dim, hs_500, 2),
-            "lshade": lambda: create_lshade(input_dim, hs_500, 2),
-            "adamw": lambda: create_adamw(input_dim, hs_500, 2)
-        }
-        engine.run_experiment(factories, data_binary)
-        for m in ["cmaes", "lshade", "adamw"]:
-            e1_results[m]["prec"].append(engine.results[m]["metrics"]["precision"])
-            e1_results[m]["rec"].append(engine.results[m]["metrics"]["recall"])
-            
-    # Plot Mean P/R for Exp1
-    plt.figure(figsize=(8, 5))
-    models = list(e1_results.keys())
-    prec_means = [np.mean(e1_results[m]["prec"]) for m in models]
-    rec_means = [np.mean(e1_results[m]["rec"]) for m in models]
-    
-    x = np.arange(len(models))
-    width = 0.35
-    plt.bar(x - width/2, prec_means, width, label='Precision')
-    plt.bar(x + width/2, rec_means, width, label='Recall')
-    plt.ylabel('Scores')
-    plt.title('Experiment 1: Mean Precision and Recall over 3 seeds')
-    plt.xticks(x, models)
-    plt.legend()
-    plt.grid(axis='y')
-    plt.savefig(os.path.join("experiments_result", "images", "Exp1_Summary_Metrics.png"))
-    plt.close()
-
-    # --- Experiment 2: Parameters Amount ---
-    print("\n" + "="*50)
-    print("EXPERIMENT 2: Parameters Amount")
-    print("="*50)
-    sizes = [100, 300, 500, 1000, 2000]
-    e2_results = {m: {"prec": [], "rec": [], "time": []} for m in ["cmaes", "lshade", "adamw"]}
-    import time
-    
-    for size in sizes:
-        hs = find_hidden_sizes(size, input_dim, 2)
-        print(f"\nEvaluating size {size} -> hidden layers {hs} (Actual params: {get_param_count(input_dim, hs, 2)})")
+    if args.exp is None or args.exp == 1:
+        print("\n" + "="*50)
+        print("EXPERIMENT 1: Reality Check")
+        print("="*50)
+        hs_500 = find_hidden_sizes(500, input_dim, 2)
+        print(f"Chosen hidden sizes for ~500 params: {hs_500} (Actual: {get_param_count(input_dim, hs_500, 2)})")
         
-        # We store temp results for 5 seeds for this size
-        temp_metrics = {m: {"prec": [], "rec": [], "time": []} for m in ["cmaes", "lshade", "adamw"]}
-        
-        for seed in range(100, 105):  # 5 seeds
+        # 3 seeds
+        e1_results = {"cmaes": {"prec": [], "rec": []}, "lshade": {"prec": [], "rec": []}, "adamw": {"prec": [], "rec": []}}
+        for seed in [42, 43, 44]:
             config = ExperimentConfig(
-                experiment_name=f"Exp2_Size_{size}_seed_{seed}",
+                experiment_name=f"Exp1_RealityCheck_seed_{seed}",
                 dataset_type="binary",
                 max_nfe=15000,
                 patience=800,
@@ -168,178 +140,293 @@ def main():
             )
             engine = ExperimentEngine(config)
             factories = {
-                "cmaes": lambda: create_cma_es(input_dim, hs, 2),
-                "lshade": lambda: create_lshade(input_dim, hs, 2),
-                "adamw": lambda: create_adamw(input_dim, hs, 2)
+                "cmaes": lambda: create_cma_es(input_dim, hs_500, 2),
+                "lshade": lambda: create_lshade(input_dim, hs_500, 2),
+                "adamw": lambda: create_adamw(input_dim, hs_500, 2)
             }
-            
-            for m_name, m_fact in factories.items():
-                start_t = time.time()
-                engine.run_experiment({m_name: m_fact}, data_binary)
-                end_t = time.time()
-                temp_metrics[m_name]["time"].append(end_t - start_t)
-                temp_metrics[m_name]["prec"].append(engine.results[m_name]["metrics"]["precision"])
-                temp_metrics[m_name]["rec"].append(engine.results[m_name]["metrics"]["recall"])
+            engine.run_experiment(factories, data_binary)
+            for m in ["cmaes", "lshade", "adamw"]:
+                e1_results[m]["prec"].append(engine.results[m]["metrics"]["precision"])
+                e1_results[m]["rec"].append(engine.results[m]["metrics"]["recall"])
                 
-        for m in ["cmaes", "lshade", "adamw"]:
-            e2_results[m]["prec"].append(np.mean(temp_metrics[m]["prec"]))
-            e2_results[m]["rec"].append(np.mean(temp_metrics[m]["rec"]))
-            e2_results[m]["time"].append(np.mean(temp_metrics[m]["time"]))
-
-    # Plot Exp 2 results - Save as separate files
-    for metric, title, filename in [
-        ("prec", "Precision vs Network Size", "Exp2_Precision_vs_Size.png"),
-        ("rec", "Recall vs Network Size", "Exp2_Recall_vs_Size.png"),
-        ("time", "Computation Time (s) vs Network Size", "Exp2_Time_vs_Size.png")
-    ]:
+        # Plot Mean P/R for Exp1
         plt.figure(figsize=(8, 5))
-        for m in ["cmaes", "lshade", "adamw"]:
-            plt.plot(sizes, e2_results[m][metric], marker='o', label=m)
-        plt.title(title)
-        plt.xlabel('Network Size')
-        plt.ylabel(metric.capitalize() if metric != "time" else "Time (seconds)")
+        models = list(e1_results.keys())
+        prec_means = [np.mean(e1_results[m]["prec"]) for m in models]
+        rec_means = [np.mean(e1_results[m]["rec"]) for m in models]
+        
+        x = np.arange(len(models))
+        width = 0.35
+        plt.bar(x - width/2, prec_means, width, label='Precision')
+        plt.bar(x + width/2, rec_means, width, label='Recall')
+        plt.ylabel('Scores')
+        plt.title('Experiment 1: Mean Precision and Recall over 3 seeds')
+        plt.xticks(x, models)
         plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig(os.path.join("experiments_result", "images", filename))
+        plt.grid(axis='y')
+        plt.savefig(os.path.join("experiments_result", "images", "Exp1_Summary_Metrics.png"))
         plt.close()
 
-    # --- Pick Best Size for Exp 3 ---
-    # Based on AdamW F1 / Precision, let's just pick 1000 for automation, or the best one
-    # Simple logic: pick size with best sum of precision+recall for AdamW
-    best_idx = np.argmax(np.array(e2_results["adamw"]["prec"]) + np.array(e2_results["adamw"]["rec"]))
-    best_size = sizes[best_idx]
-    best_hs = find_hidden_sizes(best_size, input_dim, num_classes)
+    # --- Experiment 2: Parameters Amount ---
+    sizes = [100, 300, 500, 1000, 2000]
+    best_size = 1000  # Default best size if Exp 2 is not run
     
-    print("\n" + "="*50)
-    print(f"EXPERIMENT 3: Multiclass Prediction (Best Size: {best_size})")
-    print("="*50)
-    
-    config3 = ExperimentConfig(
-        experiment_name=f"Exp3_Multiclass_size_{best_size}",
-        dataset_type="multiclass",
-        max_nfe=15000,
-        patience=800,
-        seed=200
-    )
-    engine3 = ExperimentEngine(config3)
-    factories3 = {
-        "cmaes": lambda: create_cma_es(input_dim, best_hs, num_classes),
-        "lshade": lambda: create_lshade(input_dim, best_hs, num_classes),
-        "adamw": lambda: create_adamw(input_dim, best_hs, num_classes)
-    }
-    engine3.run_experiment(factories3, data_multi)
-    
-    # Evaluate confusion matrix and F1 scores for Exp 3
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score
-    _, _, x_test, _, _, y_test = data_multi
-    
-    for m_name in ["cmaes", "lshade", "adamw"]:
-        model = factories3[m_name]()
-        model.load(engine3.results[m_name]["model_filepath"])
-        outputs = model.predict(x_test)
-        _, preds = torch.max(outputs, 1)
+    if args.exp is None or args.exp == 2:
+        print("\n" + "="*50)
+        print("EXPERIMENT 2: Parameters Amount")
+        print("="*50)
+        e2_results = {m: {"prec": [], "rec": [], "time": []} for m in ["cmaes", "lshade", "adamw"]}
+        import time
         
-        y_true = y_test.cpu().numpy()
-        y_pred = preds.cpu().numpy()
-        
-        # 1. Confusion Matrix
-        cm = confusion_matrix(y_true, y_pred)
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=unique_classes)
-        disp.plot()
-        plt.title(f"Confusion Matrix - {m_name.upper()} (Multiclass)")
-        plt.tight_layout()
-        plt.savefig(os.path.join("experiments_result", "images", f"Exp3_ConfMatrix_{m_name}.png"))
-        plt.close()
-        
-        # 2. F1 Score per Class & Macro F1
-        f1_per_class = f1_score(y_true, y_pred, average=None, zero_division=0)
-        macro_f1 = f1_score(y_true, y_pred, average='macro', zero_division=0)
-        
-        # Print results to console
-        print(f"\n[{m_name.upper()}] Multiclass Metrics:")
-        print(f"  Macro F1 Score: {macro_f1:.4f}")
-        for idx, cls in enumerate(unique_classes):
-            print(f"  Class {cls} F1 Score: {f1_per_class[idx]:.4f}")
+        for size in sizes:
+            hs = find_hidden_sizes(size, input_dim, 2)
+            print(f"\nEvaluating size {size} -> hidden layers {hs} (Actual params: {get_param_count(input_dim, hs, 2)})")
             
-        # Plot F1 Scores
-        plt.figure(figsize=(8, 5))
-        x_indices = np.arange(len(unique_classes))
-        bars = plt.bar(x_indices, f1_per_class, color='skyblue', edgecolor='black', alpha=0.8)
-        
-        plt.title(f"F1 Score per Class - {m_name.upper()} (Multiclass)")
-        plt.xlabel("Class (Wine Quality)")
-        plt.ylabel("F1 Score")
-        plt.xticks(x_indices, unique_classes)
-        plt.ylim(0, 1.1)
-        plt.grid(axis='y', linestyle='--', alpha=0.7)
-        
-        # Add F1 score values on top of bars
-        for bar in bars:
-            yval = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, f"{yval:.2f}", ha='center', va='bottom', fontsize=9)
+            # We store temp results for 5 seeds for this size
+            temp_metrics = {m: {"prec": [], "rec": [], "time": []} for m in ["cmaes", "lshade", "adamw"]}
             
-        # Write Macro F1 score inside the plot
-        plt.text(0.95, 0.95, f"Macro F1: {macro_f1:.4f}", 
-                 transform=plt.gca().transAxes, 
-                 fontsize=12, fontweight='bold',
-                 verticalalignment='top', horizontalalignment='right',
-                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join("experiments_result", "images", f"Exp3_F1_Scores_{m_name}.png"))
-        plt.close()
+            for seed in range(100, 105):  # 5 seeds
+                config = ExperimentConfig(
+                    experiment_name=f"Exp2_Size_{size}_seed_{seed}",
+                    dataset_type="binary",
+                    max_nfe=15000,
+                    patience=800,
+                    seed=seed
+                )
+                engine = ExperimentEngine(config)
+                factories = {
+                    "cmaes": lambda: create_cma_es(input_dim, hs, 2),
+                    "lshade": lambda: create_lshade(input_dim, hs, 2),
+                    "adamw": lambda: create_adamw(input_dim, hs, 2)
+                }
+                
+                for m_name, m_fact in factories.items():
+                    start_t = time.time()
+                    engine.run_experiment({m_name: m_fact}, data_binary)
+                    end_t = time.time()
+                    temp_metrics[m_name]["time"].append(end_t - start_t)
+                    temp_metrics[m_name]["prec"].append(engine.results[m_name]["metrics"]["precision"])
+                    temp_metrics[m_name]["rec"].append(engine.results[m_name]["metrics"]["recall"])
+                    
+            for m in ["cmaes", "lshade", "adamw"]:
+                e2_results[m]["prec"].append(np.mean(temp_metrics[m]["prec"]))
+                e2_results[m]["rec"].append(np.mean(temp_metrics[m]["rec"]))
+                e2_results[m]["time"].append(np.mean(temp_metrics[m]["time"]))
 
-    # --- Experiment 4: Statistical Stability ---
-    print("\n" + "="*50)
-    print("EXPERIMENT 4: Statistical Stability")
-    print("="*50)
-    
-    e4_hs = find_hidden_sizes(best_size, input_dim, 2)
-    e4_results = {m: {"prec": [], "rec": []} for m in ["cmaes", "lshade", "adamw"]}
-    
-    for seed in range(300, 315): # 15 seeds
-        config4 = ExperimentConfig(
-            experiment_name=f"Exp4_Stability_seed_{seed}",
-            dataset_type="binary",
+        # Plot Exp 2 results - Save as separate files
+        for metric, title, filename in [
+            ("prec", "Precision vs Network Size", "Exp2_Precision_vs_Size.png"),
+            ("rec", "Recall vs Network Size", "Exp2_Recall_vs_Size.png"),
+            ("time", "Computation Time (s) vs Network Size", "Exp2_Time_vs_Size.png")
+        ]:
+            plt.figure(figsize=(8, 5))
+            for m in ["cmaes", "lshade", "adamw"]:
+                plt.plot(sizes, e2_results[m][metric], marker='o', label=m)
+            plt.title(title)
+            plt.xlabel('Network Size')
+            plt.ylabel(metric.capitalize() if metric != "time" else "Time (seconds)")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(os.path.join("experiments_result", "images", filename))
+            plt.close()
+
+        # Update best_size if Exp 2 was actually run
+        best_idx = np.argmax(np.array(e2_results["adamw"]["prec"]) + np.array(e2_results["adamw"]["rec"]))
+        best_size = sizes[best_idx]
+
+    # --- Experiment 3: Multiclass Prediction ---
+    if args.exp is None or args.exp == 3:
+        best_hs = find_hidden_sizes(best_size, input_dim, num_classes)
+        
+        print("\n" + "="*50)
+        print(f"EXPERIMENT 3: Multiclass Prediction (Best Size: {best_size})")
+        print("="*50)
+        
+        config3 = ExperimentConfig(
+            experiment_name=f"Exp3_Multiclass_size_{best_size}",
+            dataset_type="multiclass",
             max_nfe=15000,
             patience=800,
-            seed=seed
+            seed=200
         )
-        engine4 = ExperimentEngine(config4)
-        factories4 = {
-            "cmaes": lambda: create_cma_es(input_dim, e4_hs, 2),
-            "lshade": lambda: create_lshade(input_dim, e4_hs, 2),
-            "adamw": lambda: create_adamw(input_dim, e4_hs, 2)
+        engine3 = ExperimentEngine(config3)
+        factories3 = {
+            "cmaes": lambda: create_cma_es(input_dim, best_hs, num_classes),
+            "lshade": lambda: create_lshade(input_dim, best_hs, num_classes),
+            "adamw": lambda: create_adamw(input_dim, best_hs, num_classes)
         }
-        engine4.run_experiment(factories4, data_binary)
+        engine3.run_experiment(factories3, data_multi)
         
-        for m in ["cmaes", "lshade", "adamw"]:
-            e4_results[m]["prec"].append(engine4.results[m]["metrics"]["precision"])
-            e4_results[m]["rec"].append(engine4.results[m]["metrics"]["recall"])
+        # Evaluate confusion matrix and F1 scores for Exp 3
+        from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score
+        _, _, x_test, _, _, y_test = data_multi
+        
+        for m_name in ["cmaes", "lshade", "adamw"]:
+            model = factories3[m_name]()
+            model.load(engine3.results[m_name]["model_filepath"])
+            outputs = model.predict(x_test)
+            _, preds = torch.max(outputs, 1)
+            
+            y_true = y_test.cpu().numpy()
+            y_pred = preds.cpu().numpy()
+            
+            # 1. Confusion Matrix
+            cm = confusion_matrix(y_true, y_pred)
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=unique_classes)
+            disp.plot()
+            plt.title(f"Confusion Matrix - {m_name.upper()} (Multiclass)")
+            plt.tight_layout()
+            plt.savefig(os.path.join("experiments_result", "images", f"Exp3_ConfMatrix_{m_name}.png"))
+            plt.close()
+            
+            # 2. F1 Score per Class & Macro F1
+            f1_per_class = f1_score(y_true, y_pred, average=None, zero_division=0)
+            macro_f1 = f1_score(y_true, y_pred, average='macro', zero_division=0)
+            
+            # Print results to console
+            print(f"\n[{m_name.upper()}] Multiclass Metrics:")
+            print(f"  Macro F1 Score: {macro_f1:.4f}")
+            for idx, cls in enumerate(unique_classes):
+                print(f"  Class {cls} F1 Score: {f1_per_class[idx]:.4f}")
+                
+            # Plot F1 Scores
+            plt.figure(figsize=(8, 5))
+            x_indices = np.arange(len(unique_classes))
+            bars = plt.bar(x_indices, f1_per_class, color='skyblue', edgecolor='black', alpha=0.8)
+            
+            plt.title(f"F1 Score per Class - {m_name.upper()} (Multiclass)")
+            plt.xlabel("Class (Wine Quality)")
+            plt.ylabel("F1 Score")
+            plt.xticks(x_indices, unique_classes)
+            plt.ylim(0, 1.1)
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+            
+            # Add F1 score values on top of bars
+            for bar in bars:
+                yval = bar.get_height()
+                plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, f"{yval:.2f}", ha='center', va='bottom', fontsize=9)
+                
+            # Write Macro F1 score inside the plot
+            plt.text(0.95, 0.95, f"Macro F1: {macro_f1:.4f}", 
+                     transform=plt.gca().transAxes, 
+                     fontsize=12, fontweight='bold',
+                     verticalalignment='top', horizontalalignment='right',
+                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            
+            plt.tight_layout()
+            plt.savefig(os.path.join("experiments_result", "images", f"Exp3_F1_Scores_{m_name}.png"))
+            plt.close()
 
-    # Boxplots - Save as separate files
-    model_labels = ["CMA-ES", "L-SHADE", "AdamW"]
-    
-    # 1. Precision Stability Boxplot
-    plt.figure(figsize=(8, 6))
-    plt.boxplot([e4_results["cmaes"]["prec"], e4_results["lshade"]["prec"], e4_results["adamw"]["prec"]], labels=model_labels)
-    plt.title("Precision Stability (15 runs)")
-    plt.ylabel("Precision")
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join("experiments_result", "images", "Exp4_Precision_Stability.png"))
-    plt.close()
-    
-    # 2. Recall Stability Boxplot
-    plt.figure(figsize=(8, 6))
-    plt.boxplot([e4_results["cmaes"]["rec"], e4_results["lshade"]["rec"], e4_results["adamw"]["rec"]], labels=model_labels)
-    plt.title("Recall Stability (15 runs)")
-    plt.ylabel("Recall")
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join("experiments_result", "images", "Exp4_Recall_Stability.png"))
-    plt.close()
+    # --- Experiment 4: Statistical Stability ---
+    if args.exp is None or args.exp == 4:
+        print("\n" + "="*50)
+        print("EXPERIMENT 4: Statistical Stability")
+        print("="*50)
+        
+        e4_hs = find_hidden_sizes(best_size, input_dim, 2)
+        e4_results = {m: {"prec": [], "rec": []} for m in ["cmaes", "lshade", "adamw"]}
+        
+        for seed in range(300, 315): # 15 seeds
+            config4 = ExperimentConfig(
+                experiment_name=f"Exp4_Stability_seed_{seed}",
+                dataset_type="binary",
+                max_nfe=15000,
+                patience=800,
+                seed=seed
+            )
+            engine4 = ExperimentEngine(config4)
+            factories4 = {
+                "cmaes": lambda: create_cma_es(input_dim, e4_hs, 2),
+                "lshade": lambda: create_lshade(input_dim, e4_hs, 2),
+                "adamw": lambda: create_adamw(input_dim, e4_hs, 2)
+            }
+            engine4.run_experiment(factories4, data_binary)
+            
+            for m in ["cmaes", "lshade", "adamw"]:
+                e4_results[m]["prec"].append(engine4.results[m]["metrics"]["precision"])
+                e4_results[m]["rec"].append(engine4.results[m]["metrics"]["recall"])
+
+        # Boxplots - Save as separate files
+        model_labels = ["CMA-ES", "L-SHADE", "AdamW"]
+        
+        # 1. Precision Stability Boxplot
+        plt.figure(figsize=(8, 6))
+        plt.boxplot([e4_results["cmaes"]["prec"], e4_results["lshade"]["prec"], e4_results["adamw"]["prec"]], labels=model_labels)
+        plt.title("Precision Stability (15 runs)")
+        plt.ylabel("Precision")
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.savefig(os.path.join("experiments_result", "images", "Exp4_Precision_Stability.png"))
+        plt.close()
+        
+        # 2. Recall Stability Boxplot
+        plt.figure(figsize=(8, 6))
+        plt.boxplot([e4_results["cmaes"]["rec"], e4_results["lshade"]["rec"], e4_results["adamw"]["rec"]], labels=model_labels)
+        plt.title("Recall Stability (15 runs)")
+        plt.ylabel("Recall")
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        plt.savefig(os.path.join("experiments_result", "images", "Exp4_Recall_Stability.png"))
+        plt.close()
+
+    # --- Experiment 5: Number of Hidden Layers ---
+    if args.exp is None or args.exp == 5:
+        print("\n" + "="*50)
+        print("EXPERIMENT 5: Number of Hidden Layers (~1000 parameters)")
+        print("="*50)
+        
+        target_params = 1000
+        layer_counts = [1, 2, 3]
+        e5_results = {m: {"prec": [], "rec": []} for m in ["cmaes", "lshade", "adamw"]}
+        
+        for num_layers in layer_counts:
+            hs = find_hidden_sizes_by_layers(target_params, num_layers, input_dim, 2)
+            print(f"\nEvaluating {num_layers} layer(s) -> hidden layers {hs} (Actual params: {get_param_count(input_dim, hs, 2)})")
+            
+            temp_metrics = {m: {"prec": [], "rec": []} for m in ["cmaes", "lshade", "adamw"]}
+            
+            for seed in range(500, 505):  # 5 seeds
+                config5 = ExperimentConfig(
+                    experiment_name=f"Exp5_Layers_{num_layers}_seed_{seed}",
+                    dataset_type="binary",
+                    max_nfe=15000,
+                    patience=800,
+                    seed=seed
+                )
+                engine5 = ExperimentEngine(config5)
+                factories5 = {
+                    "cmaes": lambda: create_cma_es(input_dim, hs, 2),
+                    "lshade": lambda: create_lshade(input_dim, hs, 2),
+                    "adamw": lambda: create_adamw(input_dim, hs, 2)
+                }
+                
+                for m_name, m_fact in factories5.items():
+                    engine5.run_experiment({m_name: m_fact}, data_binary)
+                    temp_metrics[m_name]["prec"].append(engine5.results[m_name]["metrics"]["precision"])
+                    temp_metrics[m_name]["rec"].append(engine5.results[m_name]["metrics"]["recall"])
+                    
+            for m in ["cmaes", "lshade", "adamw"]:
+                e5_results[m]["prec"].append(np.mean(temp_metrics[m]["prec"]))
+                e5_results[m]["rec"].append(np.mean(temp_metrics[m]["rec"]))
+
+        # Plots for Exp 5
+        for metric, title, filename in [
+            ("prec", "Precision vs Hidden Layers (~1000 params)", "Exp5_Precision_vs_Layers.png"),
+            ("rec", "Recall vs Hidden Layers (~1000 params)", "Exp5_Recall_vs_Layers.png")
+        ]:
+            plt.figure(figsize=(8, 5))
+            for m in ["cmaes", "lshade", "adamw"]:
+                plt.plot(layer_counts, e5_results[m][metric], marker='o', label=m.upper())
+            plt.title(title)
+            plt.xlabel('Number of Hidden Layers')
+            plt.ylabel(metric.capitalize())
+            plt.xticks(layer_counts)
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(os.path.join("experiments_result", "images", filename))
+            plt.close()
 
 if __name__ == "__main__":
     main()
