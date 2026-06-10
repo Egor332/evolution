@@ -6,7 +6,6 @@ __pycache__/
 # C extensions
 *.so
 
-experiments_result/
 trained_models/
 
 # Distribution / packaging
@@ -153,7 +152,7 @@ activemq-data/
 # Environments
 .env
 .envrc
-.venv
+# .venv
 env/
 venv/
 ENV/
