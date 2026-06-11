@@ -39,65 +39,67 @@ Głównym punktem wejścia do przeprowadzania badań jest skrypt [run_experiment
 
 ---
 
-## 2. Uruchamianie za pomocą wbudowanego środowiska `.venv`
+## 2. Przygotowanie środowiska
 
-Środowisko wirtualne `.venv` zostało w całości dodane do repozytorium Git. Zawiera ono preinstalowane pakiety wymienione w pliku [requirements.txt](w tym biblioteki `torch` z obsługą CUDA, `numpy`, `pandas`, `scikit-learn` i `matplotlib`).
+Przed uruchomieniem eksperymentów należy utworzyć wirtualne środowisko Pythona i zainstalować wymagane zależności z pliku `requirements.txt`.
 
-Dzięki temu **nie ma potrzeby instalowania żadnych pakietów ani tworzenia środowiska od zera**. Wystarczy wywołać interpreter bezpośrednio lub aktywować środowisko przed uruchomieniem.
+> [!NOTE]
+> Wymagany jest Python 3.10 lub nowszy.
 
-### System Windows (PowerShell / CMD)
+### System Windows (PowerShell)
 
-Najszybsza metoda (bezpośrednie wywołanie interpretera z folderu wirtualnego):
 ```powershell
-.venv\Scripts\python.exe run_experiments.py
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-Alternatywnie, poprzez aktywację środowiska:
+### System Windows (CMD)
 
-* **PowerShell:**
-  ```powershell
-  .venv\Scripts\Activate.ps1
-  python run_experiments.py
-  ```
-
-* **Wiersz polecenia (CMD):**
-  ```cmd
-  .venv\Scripts\activate.bat
-  python run_experiments.py
-  ```
+```cmd
+python -m venv .venv
+.venv\Scripts\activate.bat
+pip install -r requirements.txt
+```
 
 ### Systemy Linux / macOS
 
-Bezpośrednie wywołanie:
 ```bash
-.venv/bin/python run_experiments.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Z aktywacją środowiska:
-```bash
-source .venv/bin/activate
-python run_experiments.py
-```
+> [!TIP]
+> Plik `requirements.txt` zawiera konfigurację instalacji PyTorch z obsługą CUDA (cu132). Jeśli nie posiadasz karty graficznej NVIDIA, PyTorch automatycznie skorzysta z CPU.
 
 ---
 
-## 3. Opcje uruchamiania (Parametry CLI)
+## 3. Uruchamianie eksperymentów
+
+Po aktywacji środowiska wirtualnego (patrz punkt 2) skrypt uruchamia się poleceniem:
+
+```bash
+python run_experiments.py
+```
+
+### Opcje CLI
 
 Skrypt akceptuje opcjonalny argument `--exp`, który pozwala na uruchomienie wyłącznie wybranego eksperymentu (1-5). W przypadku braku podania argumentu uruchomione zostaną **wszystkie eksperymenty po kolei**.
 
 * **Uruchomienie wszystkich eksperymentów (domyślne):**
-  ```powershell
-  .venv\Scripts\python.exe run_experiments.py
+  ```bash
+  python run_experiments.py
   ```
 
 * **Uruchomienie tylko Eksperymentu 1 (Reality Check):**
-  ```powershell
-  .venv\Scripts\python.exe run_experiments.py --exp 1
+  ```bash
+  python run_experiments.py --exp 1
   ```
 
 * **Uruchomienie tylko Eksperymentu 3 (Multiclass):**
-  ```powershell
-  .venv\Scripts\python.exe run_experiments.py --exp 3
+  ```bash
+  python run_experiments.py --exp 3
   ```
 
 ---
